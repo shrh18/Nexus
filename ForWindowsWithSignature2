@@ -1,0 +1,107 @@
+import socket
+import re, uuid
+import winapps
+import json
+import sys
+import psutil
+import windows_tools.product_key
+import windows_tools.registry
+import winreg
+from verify_code_signing import is_signed
+
+hostname = socket.gethostname()
+ip_address = socket.gethostbyname(hostname)
+
+# Get Windows Product Key
+key_path = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+key_name = "ProductId"
+with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
+    value, regtype = winreg.QueryValueEx(key, key_name)
+
+    print(f"Windows Product Key is: {value}")
+    if len(value) == 0:
+        print("Windows is not activated.")
+    else:
+        print("Windows is licensed.")
+
+print("")
+print(f"Hostname: {hostname}")
+print(f"IP Address: {ip_address}")
+
+# Get MAC address
+print("The MAC address of this PC is ", end="")
+mac = ':'.join(re.findall('..', '%012x' % uuid.getnode()))
+print(mac)
+print("")
+
+# Get list of installed software and its digital signature
+software_list = []
+for item in winapps.list_installed():
+    software = {}
+    software["name"] = str(item.name)
+    software["version"] = str(item.version)
+    software["install_date"] = str(item.install_date)
+    software["install_location"] = str(item.install_location)
+    software["install_source"] = str(item.install_source)
+    software["modify_path"] = str(item.modify_path)
+    software["publisher"] = str(item.publisher)
+    software["uninstall_string"] = str(item.uninstall_string)
+    software["signed"] = False
+    exe_path = item.install_location / item.name
+    if exe_path.is_file():
+        try:
+            software["signed"] = is_signed(exe_path)
+        except Exception as e:
+            print(f"Error: {e}")
+    software_list.append(software)
+
+    print("Software Name : "+item.name)
+    print("Version : ", end="")
+    print(item.version)
+    print("Install Date : ", end="")
+    print(item.install_date)
+
+    print("Install Location : ", end="")
+    print(item.install_location)
+
+    print("Install Source : ", end="")
+    print(item.install_source)
+    print("Modify Path : ", end="")
+    print(item.modify_path)
+    print("Publisher Name : ", end="")
+    print(item.publisher)
+    print("Uninstall Path : ", end="")
+    print(item.uninstall_string)
+    print("Digitally Signed: ", software["signed"])
+    print("\n")
+
+X = {
+    "Hostname": hostname,
+    "IP Address": ip_address,
+    "MAC Address": mac,
+    "Windows Product Key": value,
+    "Softwares Installed": software_list
+}
+sfdata= json.dumps(X)
+print(X)
+
+# Socket programming to send data to server
+host = "localhost"
+port = 12345
+
+# Create a socket (SOCK_STREAM means a TCP socket)
+sock = socket.socket()
+sock.connect((host,port))
+sfdata = bytes(sfdata,'utf-8')
+sock.sendall(sfdata)
+data = sock.recv(100000)
+print("-------------------------------------")
+print(data)
+
+print("----------------------------------------")
+print("Sent:     {}".format(sfdata))
+print("----------------------------------------")
+print("Received: {}".format(data))
+
+
+sock.close()
